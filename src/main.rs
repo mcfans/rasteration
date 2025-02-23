@@ -3,7 +3,125 @@ use std::cmp::min;
 use cgmath::{Matrix, Matrix3, Matrix4, Rad, Vector2, Vector3, Vector4};
 use pixel_canvas::{input::MouseState, Canvas, Color, Image, XY};
 
+struct Model {
+    triangles: Vec<TriangleInModel>,
+    translate: Vector3<f32>,
+    rotate: Matrix3<f32>,
+    scale: f32
+}
+
+impl Model {
+    fn transform(&self) -> Matrix4<f32> {
+        let translate = Matrix4::from_translation(self.translate);
+        let rotate = Matrix4::from(self.rotate);
+        let scale = Matrix4::from_nonuniform_scale(self.scale, self.scale, self.scale);
+        translate * rotate * scale
+    }
+
+    fn transform_triangle(&self, triangle: &TriangleInModel) -> TriangleInModel {
+        let transform = self.transform();
+        let p1 = transform * Vector4::new(triangle.p1.x, triangle.p1.y, triangle.p1.z, 1.0);
+        let p2 = transform * Vector4::new(triangle.p2.x, triangle.p2.y, triangle.p2.z, 1.0);
+        let p3 = transform * Vector4::new(triangle.p3.x, triangle.p3.y, triangle.p3.z, 1.0);
+
+        let p1 = Vector3::new(p1.x / p1.w, p1.y / p1.w, p1.z / p1.w);
+        let p2 = Vector3::new(p2.x / p2.w, p2.y / p2.w, p2.z / p2.w);
+        let p3 = Vector3::new(p3.x / p3.w, p3.y / p3.w, p3.z / p3.w);
+
+        TriangleInModel { p1, p2, p3 }
+    }
+
+    fn transform_triangles_iter(&self) -> impl Iterator<Item = TriangleInModel> + '_ {
+        self.triangles.iter().map(move |triangle| self.transform_triangle(triangle))
+    }
+}
+
+fn parser_file(file_path: &str) -> (Vec<Vector3<f32>>, Vec<Vector3<usize>>) {
+    let file = std::fs::read_to_string(file_path).unwrap();
+
+    let mut vertices = Vec::new();
+    let mut triangles = Vec::new();
+    let lines = file.split("\n");
+    let mut phase = 0;
+
+    let mut vertices_count = 0;
+    let mut triangles_count = 0;
+
+    for line in lines {
+        let mut parts = line.split(" ");
+        if phase == 0 {
+            if let Some(first) = parts.next() {
+                if first == "end_header" {
+                    phase = 1;
+                } else if first == "element" {
+                    let element = parts.next().unwrap();
+                    let count = parts.next().unwrap().parse::<usize>().unwrap();
+                    if element == "vertex" {
+                        vertices_count = count;
+                    } else if element == "face" {
+                        triangles_count = count;
+                    }
+                }
+            }
+        } else if phase == 1 {
+            let mut x: Option<f32> = None;
+            let mut y: Option<f32> = None;
+            let mut z: Option<f32> = None;
+            for part in parts {
+                if x.is_none() {
+                    x = Some(part.parse::<f32>().unwrap());
+                } else if y.is_none() {
+                    y = Some(part.parse::<f32>().unwrap());
+                } else if z.is_none() {
+                    z = Some(part.parse::<f32>().unwrap());
+                }
+            }
+            vertices.push(Vector3::new(x.unwrap(), y.unwrap(), z.unwrap()));
+            if vertices.len() == vertices_count {
+                phase = 2;
+            }
+        } else if phase == 2 {
+            let mut x: Option<usize> = None;
+            let mut y: Option<usize> = None;
+            let mut z: Option<usize> = None;
+
+            _ = parts.next();
+            
+            for part in parts {
+                if x.is_none() {
+                    x = Some(part.parse::<usize>().unwrap());
+                } else if y.is_none() {
+                    y = Some(part.parse::<usize>().unwrap());
+                } else if z.is_none() {
+                    z = Some(part.parse::<usize>().unwrap());
+                }
+            }
+            triangles.push(Vector3::new(x.unwrap(), y.unwrap(), z.unwrap()));
+            if triangles.len() == triangles_count {
+                break;
+            }
+        }
+    }
+    return (vertices, triangles);
+}
+
 fn main() {
+    let (vertices, faces) = parser_file("/Users/yangxuesi/Downloads/bunny/reconstruction/bun_zipper_res4.ply");
+
+    let triangles: Vec<TriangleInModel> = faces.iter().map(|face| {
+        let p1 = vertices[face.x];
+        let p2 = vertices[face.y];
+        let p3 = vertices[face.z];
+        TriangleInModel { p1, p2, p3 }
+    }).collect();
+
+    let model = Model {
+        triangles,
+        translate: Vector3::new(0.0, 0.0, 0.0),
+        rotate: Matrix3::from_angle_x(Rad(0.0)),
+        scale: 100.0
+    };
+
     let canvas = Canvas::new(512, 512)
         .title("3D Cube")
         .state(MouseState::new())
@@ -18,42 +136,6 @@ fn main() {
         near: 0.1,
         far: 100.0
     };
-
-    // 定义立方体的顶点
-    let cube_vertices = [
-        // 前面
-        Vector3::new(-10.0, -10.0, 10.0),
-        Vector3::new( 10.0, -10.0,  10.0),
-        Vector3::new( 10.0,  10.0,  10.0),
-        Vector3::new(-10.0,  10.0,  10.0),
-        // 后面
-        Vector3::new(-10.0, -10.0, -10.0),
-        Vector3::new( 10.0, -10.0, -10.0),
-        Vector3::new( 10.0,  10.0, -10.0),
-        Vector3::new(-10.0,  10.0, -10.0),
-    ];
-
-    // 定义立方体的三角形面
-    let cube_triangles = [
-        // 前面
-        TriangleInModel { p1: cube_vertices[0], p2: cube_vertices[1], p3: cube_vertices[2] },
-        TriangleInModel { p1: cube_vertices[0], p2: cube_vertices[2], p3: cube_vertices[3] },
-        // 右面
-        TriangleInModel { p1: cube_vertices[1], p2: cube_vertices[5], p3: cube_vertices[6] },
-        TriangleInModel { p1: cube_vertices[1], p2: cube_vertices[6], p3: cube_vertices[2] },
-        // 后面
-        TriangleInModel { p1: cube_vertices[5], p2: cube_vertices[4], p3: cube_vertices[7] },
-        TriangleInModel { p1: cube_vertices[5], p2: cube_vertices[7], p3: cube_vertices[6] },
-        // 左面
-        TriangleInModel { p1: cube_vertices[4], p2: cube_vertices[0], p3: cube_vertices[3] },
-        TriangleInModel { p1: cube_vertices[4], p2: cube_vertices[3], p3: cube_vertices[7] },
-        // 上面
-        TriangleInModel { p1: cube_vertices[3], p2: cube_vertices[2], p3: cube_vertices[6] },
-        TriangleInModel { p1: cube_vertices[3], p2: cube_vertices[6], p3: cube_vertices[7] },
-        // 下面
-        TriangleInModel { p1: cube_vertices[4], p2: cube_vertices[5], p3: cube_vertices[1] },
-        TriangleInModel { p1: cube_vertices[4], p2: cube_vertices[1], p3: cube_vertices[0] },
-    ];
 
     let mut rotation = 0.0f32;
     
@@ -73,13 +155,15 @@ fn main() {
 
         // 渲染所有三角形
         // let mut count = 0;
-        for triangle in cube_triangles.iter() {
-            draw_a_triangle_in_model(triangle, &camera, image);
-            // count += 1;
-            // if count == 1 {
-            //     break;
-            // }
+        for triangle in model.transform_triangles_iter() {
+            draw_a_triangle_in_model(&triangle, &camera, image);
         }
+        // for triangle in cube_triangles.iter() {
+        //     // count += 1;
+        //     // if count == 1 {
+        //     //     break;
+        //     // }
+        // }
     });
 }
 type Point = Vector3<f32>;
