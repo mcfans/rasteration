@@ -106,7 +106,7 @@ fn parser_file(file_path: &str) -> (Vec<Vector3<f32>>, Vec<Vector3<usize>>) {
 }
 
 fn main() {
-    let (vertices, faces) = parser_file("/Users/yangxuesi/Downloads/bunny/reconstruction/bun_zipper_res4.ply");
+    let (vertices, faces) = parser_file("/Users/mcfans/Downloads/bunny/reconstruction/bun_zipper.ply");
 
     let triangles: Vec<TriangleInModel> = faces.iter().map(|face| {
         let p1 = vertices[face.x];
@@ -146,12 +146,12 @@ fn main() {
         }
 
         // 更新旋转角度
-        rotation += 0.02;
+        // rotation += 0.02;
         
         // 更新相机旋转
-        let mut camera = camera.clone();
-        camera.rotate = Matrix3::from_angle_y(Rad(rotation)) * Matrix3::from_angle_x(Rad(rotation * 0.5));
-        camera.aspect = image.width() as f32 / image.height() as f32;
+        // let mut camera = camera.clone();
+        // camera.rotate = Matrix3::from_angle_y(Rad(rotation)) * Matrix3::from_angle_x(Rad(rotation * 0.5));
+        // camera.aspect = image.width() as f32 / image.height() as f32;
 
         // 渲染所有三角形
         // let mut count = 0;
@@ -315,8 +315,8 @@ impl TriangleInScreen {
         let sample_point3_in = self.test_p(sample_point3.x, sample_point3.y);
         let sample_point4_in = self.test_p(sample_point4.x, sample_point4.y);
 
-        let rate = (sample_point1_in as u8 + sample_point2_in as u8 + sample_point3_in as u8 + sample_point4_in as u8) / 4;
-        rate as f32
+        let rate = (sample_point1_in as u8 as f32 + sample_point2_in as u8 as f32 + sample_point3_in as u8 as f32 + sample_point4_in as u8 as f32) / 4.0;
+        rate
     }
 }
 
@@ -349,10 +349,10 @@ fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Image) {
             let point = Vector2 { x: x as f32, y: y as f32 };
             let coverage = triangle.coverage(point);
             let xy = XY(x as usize, y as usize);
-            if image[xy].r == 0 {
-                let xy = XY(x as usize, y as usize);
-                image[xy] = Color::rgb((255f32 * coverage).round() as u8, 0, 0);
-            }
+            let old_progress = (image[xy].r as f32) / 255f32;
+            let new_progress = 1f32.min(old_progress + coverage);
+            let xy = XY(x as usize, y as usize);
+            image[xy] = Color::rgb((255f32 * new_progress).round() as u8, 0, 0);
             // if coverage > 0.0 {
             //     image[xy] = Color::rgb(255, 0, 0);
             // }
