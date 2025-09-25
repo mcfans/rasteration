@@ -1,7 +1,7 @@
 use std::cmp::min;
 
-use cgmath::{Matrix, Matrix3, Matrix4, Rad, Vector2, Vector3, Vector4};
-use pixel_canvas::{input::MouseState, Canvas, Color, Image, XY};
+use cgmath::{Matrix, Matrix3, Matrix4, Rad, Vector2, Vector3, Vector4, InnerSpace};
+use minifb::{Key, Window, WindowOptions};
 
 struct Model {
     triangles: Vec<TriangleInModel>,
@@ -105,8 +105,11 @@ fn parser_file(file_path: &str) -> (Vec<Vector3<f32>>, Vec<Vector3<usize>>) {
     return (vertices, triangles);
 }
 
+const WIDTH: usize = 512;
+const HEIGHT: usize = 512;
+
 fn main() {
-    let (vertices, faces) = parser_file("/Users/mcfans/Downloads/bunny/reconstruction/bun_zipper.ply");
+    let (vertices, faces) = parser_file("/Users/yangxuesi/Downloads/bunny/reconstruction/bun_zipper.ply");
 
     let triangles: Vec<TriangleInModel> = faces.iter().map(|face| {
         let p1 = vertices[face.x];
@@ -115,17 +118,25 @@ fn main() {
         TriangleInModel { p1, p2, p3 }
     }).collect();
 
-    let model = Model {
+    let mut model = Model {
         triangles,
         translate: Vector3::new(0.0, 0.0, 0.0),
         rotate: Matrix3::from_angle_x(Rad(0.0)),
         scale: 100.0
     };
 
-    let canvas = Canvas::new(512, 512)
-        .title("3D Cube")
-        .state(MouseState::new())
-        .input(MouseState::handle_input);
+    let mut image_buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
+    let mut coverage_buffer: Vec<f32> = vec![0f32; WIDTH * HEIGHT];
+
+    let mut window = Window::new(
+        "Test - ESC to exit",
+        WIDTH,
+        HEIGHT,
+        WindowOptions::default(),
+    )
+    .unwrap_or_else(|e| {
+        panic!("{}", e);
+    });
     
     // 初始化相机
     let camera = Camera {
@@ -138,33 +149,43 @@ fn main() {
     };
 
     let mut rotation = 0.0f32;
-    
-    canvas.render(move |mouse, image| {
-        // 清空画布
-        for pixel in image.iter_mut() {
-            *pixel = Color::rgb(0, 0, 0);
-        }
+
+    window.set_target_fps(144);
+
+    while window.is_open() && !window.is_key_down(Key::Escape) {
+        image_buffer.fill(0);
+        coverage_buffer.fill(0.0);
+
+        // 尝试不同的旋转方式
+        // 方式1: 只绕Y轴旋转（推荐）
+        model.rotate = Matrix3::from_angle_y(Rad(rotation));
+        
+        // rotation += 0.001;  // 减慢旋转速度
+        // 上下反转：绕X轴旋转180度
+        model.rotate = Matrix3::from_angle_x(Rad(std::f32::consts::PI)) * model.rotate;
 
         // 更新旋转角度
-        // rotation += 0.02;
-        
-        // 更新相机旋转
-        // let mut camera = camera.clone();
-        // camera.rotate = Matrix3::from_angle_y(Rad(rotation)) * Matrix3::from_angle_x(Rad(rotation * 0.5));
-        // camera.aspect = image.width() as f32 / image.height() as f32;
 
         // 渲染所有三角形
-        // let mut count = 0;
         for triangle in model.transform_triangles_iter() {
-            draw_a_triangle_in_model(&triangle, &camera, image);
+            draw_a_triangle_in_model(&triangle, &camera, &mut coverage_buffer);
         }
-        // for triangle in cube_triangles.iter() {
-        //     // count += 1;
-        //     // if count == 1 {
-        //     //     break;
-        //     // }
-        // }
-    });
+
+        // draw_a_triangle(TriangleInScreen { p1: Vector2::new(0.0, 0.0), p2: Vector2::new(WIDTH as f32 / 2.0, HEIGHT as f32), p3: Vector2::new(WIDTH as f32, 0.0) }, &mut coverage_buffer);
+        // let size = 200.0;
+        // draw_a_triangle(TriangleInScreen { p1: Vector3::new(0.0, 0.0, 1.0), p2: Vector3::new(0.0, size, 1.0), p3: Vector3::new(size, 0.0, 1.0) }, &mut coverage_buffer);
+
+        for (i, coverage) in coverage_buffer.iter().enumerate() {
+            // image_buffer[i] = u32::from_be_bytes([(255f32 * coverage.min(1.0)) as u8, 0, 0, 255]);
+            image_buffer[i] = u32::from_be_bytes([0, 255, (255f32 * coverage.min(1.0)) as u8, 255]);
+        }
+
+        window
+            .update_with_buffer(&image_buffer, WIDTH, HEIGHT)
+            .unwrap_or_else(|e| {
+                panic!("{}", e);
+            });
+    }
 }
 type Point = Vector3<f32>;
 
@@ -175,9 +196,9 @@ struct TriangleInModel {
 }
 
 struct TriangleInScreen {
-    p1: Vector2<f32>,
-    p2: Vector2<f32>,
-    p3: Vector2<f32>
+    p1: Point,
+    p2: Point,
+    p3: Point
 }
 
 type Transform = Matrix4<f32>;
@@ -230,41 +251,6 @@ struct Rect {
 
 }
 
-// #[derive(Debug, Clone, Copy)]
-// struct Point {
-//     x: usize,
-//     y: usize,
-// }
-
-// impl Point {
-//     fn new(x: usize, y: usize) -> Point {
-//         return Point { x, y };
-//     }
-// }
-
-// struct Rect {
-//     origin: Point,
-//     width: usize,
-//     height: usize
-// }
-
-// struct Triangle {
-//     p1: Point,
-//     p2: Point,
-//     p3: Point
-// }
-
-// struct Vector {
-//     x: f32,
-//     y: f32
-// }
-
-// impl Vector {
-//     fn cross(&self, other: Vector) -> f32 {
-//         self.x * other.y - self.y * other.x
-//     }
-// }
-
 impl TriangleInScreen {
     fn bounding_box(&self) -> Rect {
         let x = self.p1.x.min(self.p2.x).min(self.p3.x);
@@ -291,24 +277,24 @@ impl TriangleInScreen {
         let cross2 = edge2.perp_dot(test_edge2);
         let cross3 = edge3.perp_dot(test_edge3);
         
-        if cross1 < 0.0 && cross2 < 0.0 && cross3 < 0.0 {
+        if cross1 <= 0.0 && cross2 <= 0.0 && cross3 <= 0.0 {
             return true;
         }
 
-        if cross1 > 0.0 && cross2 > 0.0 && cross3 > 0.0 {
+        if cross1 >= 0.0 && cross2 >= 0.0 && cross3 >= 0.0 {
             return true;
         }
 
         return false;
-
-        // return cross1 >= 0.0 && cross2 >= 0.0 && cross3 >= 0.0;
     }
 
     fn coverage(&self, point: Vector2<f32>) -> f32 {
-        let sample_point1 = Vector2 { x: point.x as f32 + 0.5, y: point.y as f32 };
-        let sample_point2 = Vector2 { x: point.x as f32 + 0.5, y: point.y as f32 + 1.0 };
-        let sample_point3 = Vector2 { x: point.x as f32, y: point.y as f32 + 0.5 };
-        let sample_point4 = Vector2 { x: point.x as f32 + 1.0, y: point.y as f32 + 0.5 };
+        // 使用标准的MSAA 4x采样模式
+        // 采样点均匀分布在像素区域内，避免边缘重叠
+        let sample_point1 = Vector2 { x: point.x as f32 + 0.375, y: point.y as f32 + 0.125 };
+        let sample_point2 = Vector2 { x: point.x as f32 + 0.875, y: point.y as f32 + 0.375 };
+        let sample_point3 = Vector2 { x: point.x as f32 + 0.125, y: point.y as f32 + 0.625 };
+        let sample_point4 = Vector2 { x: point.x as f32 + 0.625, y: point.y as f32 + 0.875 };
 
         let sample_point1_in = self.test_p(sample_point1.x, sample_point1.y);
         let sample_point2_in = self.test_p(sample_point2.x, sample_point2.y);
@@ -320,7 +306,23 @@ impl TriangleInScreen {
     }
 }
 
-fn draw_a_triangle_in_model(triangle: &TriangleInModel, camera: &Camera, image: &mut Image) {
+fn draw_a_triangle_in_model(triangle: &TriangleInModel, camera: &Camera, image: &mut Vec<f32>) {
+    // 背部剔除：计算三角形法向量和视线向量
+    let edge1 = triangle.p2 - triangle.p1;
+    let edge2 = triangle.p3 - triangle.p1;
+    let normal = edge1.cross(edge2).normalize();
+    
+    // 计算三角形中心点
+    let center = (triangle.p1 + triangle.p2 + triangle.p3) / 3.0;
+    
+    // 计算从相机到三角形中心的视线向量
+    let view_direction = (center - camera.translate).normalize();
+    
+    // 如果法向量和视线向量的点积为负，说明三角形背对相机，应该被剔除
+    if normal.dot(view_direction) < 0.0 {
+        return;
+    }
+
     let transform = camera.transform();
     let p1 = transform * Vector4::new(triangle.p1.x, triangle.p1.y, triangle.p1.z, 1.0);
     let p2 = transform * Vector4::new(triangle.p2.x, triangle.p2.y, triangle.p2.z, 1.0);
@@ -330,49 +332,47 @@ fn draw_a_triangle_in_model(triangle: &TriangleInModel, camera: &Camera, image: 
     let p2 = Vector3::new(p2.x / p2.w, p2.y / p2.w, p2.z / p2.w);
     let p3 = Vector3::new(p3.x / p3.w, p3.y / p3.w, p3.z / p3.w);
 
-    let p1 = Vector2 { x: (p1.x + 1.0) * 0.5 * image.width() as f32, y: (1.0 - p1.y) * 0.5 * image.height() as f32 };
-    let p2 = Vector2 { x: (p2.x + 1.0) * 0.5 * image.width() as f32, y: (1.0 - p2.y) * 0.5 * image.height() as f32 };
-    let p3 = Vector2 { x: (p3.x + 1.0) * 0.5 * image.width() as f32, y: (1.0 - p3.y) * 0.5 * image.height() as f32 };
+    let p1 = Vector3 { x: (p1.x + 1.0) * 0.5 * WIDTH as f32, y: (1.0 - p1.y) * 0.5 * HEIGHT as f32, z: p1.z };
+    let p2 = Vector3 { x: (p2.x + 1.0) * 0.5 * WIDTH as f32, y: (1.0 - p2.y) * 0.5 * HEIGHT as f32, z: p2.z };
+    let p3 = Vector3 { x: (p3.x + 1.0) * 0.5 * WIDTH as f32, y: (1.0 - p3.y) * 0.5 * HEIGHT as f32, z: p3.z };
 
     draw_a_triangle(TriangleInScreen { p1, p2, p3 }, image);
 }
 
-fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Image) {
+fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Vec<f32>) {
     let bounding_box = triangle.bounding_box();
     let start_x = bounding_box.origin.x.round() as i32;
     let start_y = bounding_box.origin.y.round() as i32;
-    let end_x = min((bounding_box.origin.x + bounding_box.width).round() as i32, image.width() as i32);
-    let end_y = min((bounding_box.origin.y + bounding_box.height).round() as i32, image.height() as i32);
+    let end_x = min((bounding_box.origin.x + bounding_box.width).round() as i32, WIDTH as i32);
+    let end_y = min((bounding_box.origin.y + bounding_box.height).round() as i32, HEIGHT as i32);
 
-    for x in start_x .. end_x {
-        for y in start_y .. end_y {
+    for x in start_x ..= end_x {
+        for y in start_y ..= end_y {
             let point = Vector2 { x: x as f32, y: y as f32 };
             let coverage = triangle.coverage(point);
-            let xy = XY(x as usize, y as usize);
-            let old_progress = (image[xy].r as f32) / 255f32;
-            let new_progress = 1f32.min(old_progress + coverage);
-            let xy = XY(x as usize, y as usize);
-            image[xy] = Color::rgb((255f32 * new_progress).round() as u8, 0, 0);
-            // if coverage > 0.0 {
-            //     image[xy] = Color::rgb(255, 0, 0);
+            let xy = x as usize + y as usize * WIDTH;
+            // if coverage >= 0.0 {
+            //     image[xy] = 1.0;
+            // } else {
+            //     image[xy] = 0.0;
             // }
+            image[xy] += coverage;
+            if image[xy] >= 0.75 {
+                image[xy] = 1.0;
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use cgmath::Vector2;
+    use cgmath::{Vector2, Vector3};
 
     #[test]
     fn test_coverage() {
-        let p1 = Vector2 { x: 329.900848, y: 182.099152 };
-        let p2 = Vector2 { x: 182.099152, y: 182.099152 };
-        let p3 = Vector2 { x: 182.099152, y: 329.900848 };
+        let triangle = super::TriangleInScreen { p1: Vector3::new(0.0, 0.0, 1.0), p2: Vector3::new(0.0, 2.0, 1.0), p3: Vector3::new(2.0, 0.0, 1.0) };
 
-        let triangle = super::TriangleInScreen { p1, p2, p3 };
-        let point = Vector2 { x: 200.0, y: 200.0 };
-
+        let point = Vector2::new(0.0, 0.0);
         let coverage = triangle.coverage(point);
         assert_eq!(coverage, 1.0);
     }

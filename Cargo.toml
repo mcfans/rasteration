@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 cgmath = "0.18.0"
-pixel-canvas = "0.2.3"
+minifb = "0.28"
