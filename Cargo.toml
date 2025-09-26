@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-cgmath = "0.18.0"
+glam = "0.30.8"
 minifb = "0.28"
+

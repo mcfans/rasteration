@@ -1,32 +1,33 @@
 use std::cmp::{max, min};
 
-use cgmath::{InnerSpace, Matrix, Matrix3, Matrix4, Rad, Vector2, Vector3, Vector4, Zero};
+// use cgmath::{InnerSpace, Matrix, Matrix3, Matrix4, Rad, Vector2, Vector3, Vector4, Zero};
 use minifb::{Key, Window, WindowOptions};
+use glam::{Mat3, Mat4, USizeVec3, Vec3, Vec4, Vec2};
 
 struct Model {
     triangles: Vec<TriangleInModel>,
-    translate: Vector3<f32>,
-    rotate: Matrix3<f32>,
+    translate: Vec3,
+    rotate: Mat3,
     scale: f32
 }
 
 impl Model {
-    fn transform(&self) -> Matrix4<f32> {
-        let translate = Matrix4::from_translation(self.translate);
-        let rotate = Matrix4::from(self.rotate);
-        let scale = Matrix4::from_nonuniform_scale(self.scale, self.scale, self.scale);
+    fn transform(&self) -> Mat4 {
+        let translate = Mat4::from_translation(self.translate);
+        let rotate = Mat4::from_mat3(self.rotate);
+        let scale = Mat4::from_scale(Vec3::splat(self.scale));
         translate * rotate * scale
     }
 
     fn transform_triangle(&self, triangle: &TriangleInModel) -> TriangleInModel {
         let transform = self.transform();
-        let p1 = transform * Vector4::new(triangle.p1.x, triangle.p1.y, triangle.p1.z, 1.0);
-        let p2 = transform * Vector4::new(triangle.p2.x, triangle.p2.y, triangle.p2.z, 1.0);
-        let p3 = transform * Vector4::new(triangle.p3.x, triangle.p3.y, triangle.p3.z, 1.0);
+        let p1 = transform * Vec4::new(triangle.p1.x, triangle.p1.y, triangle.p1.z, 1.0);
+        let p2 = transform * Vec4::new(triangle.p2.x, triangle.p2.y, triangle.p2.z, 1.0);
+        let p3 = transform * Vec4::new(triangle.p3.x, triangle.p3.y, triangle.p3.z, 1.0);
 
-        let p1 = Vector3::new(p1.x / p1.w, p1.y / p1.w, p1.z / p1.w);
-        let p2 = Vector3::new(p2.x / p2.w, p2.y / p2.w, p2.z / p2.w);
-        let p3 = Vector3::new(p3.x / p3.w, p3.y / p3.w, p3.z / p3.w);
+        let p1 = Vec3::new(p1.x / p1.w, p1.y / p1.w, p1.z / p1.w);
+        let p2 = Vec3::new(p2.x / p2.w, p2.y / p2.w, p2.z / p2.w);
+        let p3 = Vec3::new(p3.x / p3.w, p3.y / p3.w, p3.z / p3.w);
 
         TriangleInModel { p1, p2, p3 }
     }
@@ -36,7 +37,7 @@ impl Model {
     }
 }
 
-fn parser_file(file_path: &str) -> (Vec<Vector3<f32>>, Vec<Vector3<usize>>) {
+fn parser_file(file_path: &str) -> (Vec<Vec3>, Vec<USizeVec3>) {
     let file = std::fs::read_to_string(file_path).unwrap();
 
     let mut vertices = Vec::new();
@@ -76,7 +77,7 @@ fn parser_file(file_path: &str) -> (Vec<Vector3<f32>>, Vec<Vector3<usize>>) {
                     z = Some(part.parse::<f32>().unwrap());
                 }
             }
-            vertices.push(Vector3::new(x.unwrap(), y.unwrap(), z.unwrap()));
+            vertices.push(Vec3::new(x.unwrap(), y.unwrap(), z.unwrap()));
             if vertices.len() == vertices_count {
                 phase = 2;
             }
@@ -96,7 +97,7 @@ fn parser_file(file_path: &str) -> (Vec<Vector3<f32>>, Vec<Vector3<usize>>) {
                     z = Some(part.parse::<usize>().unwrap());
                 }
             }
-            triangles.push(Vector3::new(x.unwrap(), y.unwrap(), z.unwrap()));
+            triangles.push(USizeVec3::new(x.unwrap(), y.unwrap(), z.unwrap()));
             if triangles.len() == triangles_count {
                 break;
             }
@@ -120,8 +121,8 @@ fn main() {
 
     let mut model = Model {
         triangles,
-        translate: Vector3::new(0.0, 0.0, 0.0),
-        rotate: Matrix3::from_angle_x(Rad(0.0)),
+        translate: Vec3::new(0.0, 0.0, 0.0),
+        rotate: Mat3::from_rotation_x(0.0),
         scale: 100.0
     };
 
@@ -140,13 +141,13 @@ fn main() {
     
     // 初始化相机
     let mut camera = Camera {
-        translate: Vector3::new(0.0, -10.0, -30.0),
-        rotate: Matrix3::from_angle_x(Rad(0.0)),
+        translate: Vec3::new(0.0, -10.0, -30.0),
+        rotate: Mat3::from_rotation_x(0.0),
         fov: 60.0f32.to_radians(),
         aspect: 1.0,
         near: 0.1,
         far: 100.0,
-        transform: Matrix4::zero()
+        transform: Mat4::ZERO
     };
 
     camera.transform = camera.perspective_transform() * camera.view_transform();
@@ -161,11 +162,11 @@ fn main() {
 
         // 尝试不同的旋转方式
         // 方式1: 只绕Y轴旋转（推荐）
-        model.rotate = Matrix3::from_angle_y(Rad(rotation));
+        model.rotate = Mat3::from_rotation_y(rotation);
         
         rotation += 0.1;  // 减慢旋转速度
         // 上下反转：绕X轴旋转180度
-        model.rotate = Matrix3::from_angle_x(Rad(std::f32::consts::PI)) * model.rotate;
+        model.rotate = Mat3::from_rotation_x(std::f32::consts::PI) * model.rotate;
 
         // 更新旋转角度
 
@@ -190,7 +191,7 @@ fn main() {
             });
     }
 }
-type Point = Vector3<f32>;
+type Point = Vec3;
 
 struct TriangleInModel {
     p1: Point,
@@ -204,12 +205,12 @@ struct TriangleInScreen {
     p3: Point
 }
 
-type Transform = Matrix4<f32>;
+type Transform = Mat4;
 
 #[derive(Clone)]
 struct Camera {
-    translate: Vector3<f32>,
-    rotate: Matrix3<f32>,
+    translate: Vec3,
+    rotate: Mat3,
     fov: f32,
     aspect: f32,
     near: f32,
@@ -219,10 +220,10 @@ struct Camera {
 
 impl Camera {
     fn view_transform(&self) -> Transform {
-        let translate = Matrix4::from_translation(-self.translate);
-        let mut matrix = Matrix4::from(self.rotate.transpose());
-        matrix.w.w = 1.0;
-        translate * matrix
+        let translate = Mat4::from_translation(-self.translate);
+        let mut rotate = Mat4::from_mat3(self.rotate.transpose());
+        rotate.w_axis.w = 1.0;
+        translate * rotate
     }
 
     fn perspective_transform(&self) -> Transform {
@@ -233,12 +234,12 @@ impl Camera {
         let a34 = (2.0 * self.near * self.far) / (self.near - self.far);
 
         // Column-major order
-        Matrix4::new(
-            a11, 0.0, 0.0, 0.0,
-            0.0, a22, 0.0, 0.0,
-            0.0, 0.0, a33, -1.0,
-            0.0, 0.0, a34, 0.0
-        )
+        Mat4::from_cols_array_2d(&[
+            [a11, 0.0, 0.0, 0.0],
+            [0.0, a22, 0.0, 0.0],
+            [0.0, 0.0, a33, -1.0],
+            [0.0, 0.0, a34, 0.0]
+        ])
     }
 
     fn transform(&self) -> &Transform {
@@ -250,10 +251,9 @@ impl Camera {
 }
 
 struct Rect {
-    origin: Vector2<f32>,
+    origin: Vec2,
     width: f32,
     height: f32
-
 }
 
 impl TriangleInScreen {
@@ -266,17 +266,17 @@ impl TriangleInScreen {
 
         let width = max_x - x;
         let height = max_y - y;
-        Rect { origin: Vector2 { x, y }, width, height }
+        Rect { origin: Vec2::new(x, y), width, height }
     }
 
     fn test_p(&self, x: f32, y: f32) -> bool {
-        let edge1 = Vector2 { x: self.p2.x - self.p1.x, y: self.p2.y - self.p1.y };
-        let edge2 = Vector2 { x: self.p3.x - self.p2.x, y: self.p3.y - self.p2.y };
-        let edge3 = Vector2 { x: self.p1.x - self.p3.x, y: self.p1.y - self.p3.y };
+        let edge1 = Vec2::new(self.p2.x - self.p1.x, self.p2.y - self.p1.y);
+        let edge2 = Vec2::new(self.p3.x - self.p2.x, self.p3.y - self.p2.y);
+        let edge3 = Vec2::new(self.p1.x - self.p3.x, self.p1.y - self.p3.y);
 
-        let test_edge1 = Vector2 { x: x - self.p1.x, y: y - self.p1.y };
-        let test_edge2 = Vector2 { x: x - self.p2.x, y: y - self.p2.y };
-        let test_edge3 = Vector2 { x: x - self.p3.x, y: y - self.p3.y };
+        let test_edge1 = Vec2::new(x - self.p1.x, y - self.p1.y);
+        let test_edge2 = Vec2::new(x - self.p2.x, y - self.p2.y);
+        let test_edge3 = Vec2::new(x - self.p3.x, y - self.p3.y);
 
         let cross1 = edge1.perp_dot(test_edge1);
         let cross2 = edge2.perp_dot(test_edge2);
@@ -293,13 +293,13 @@ impl TriangleInScreen {
         return false;
     }
 
-    fn coverage(&self, point: Vector2<f32>) -> f32 {
+    fn coverage(&self, point: Vec2) -> f32 {
         // 使用标准的MSAA 4x采样模式
         // 采样点均匀分布在像素区域内，避免边缘重叠
-        let sample_point1 = Vector2 { x: point.x as f32 + 0.375, y: point.y as f32 + 0.125 };
-        let sample_point2 = Vector2 { x: point.x as f32 + 0.875, y: point.y as f32 + 0.375 };
-        let sample_point3 = Vector2 { x: point.x as f32 + 0.125, y: point.y as f32 + 0.625 };
-        let sample_point4 = Vector2 { x: point.x as f32 + 0.625, y: point.y as f32 + 0.875 };
+        let sample_point1 = Vec2::new(point.x + 0.375, point.y + 0.125);
+        let sample_point2 = Vec2::new(point.x + 0.875, point.y + 0.375);
+        let sample_point3 = Vec2::new(point.x + 0.125, point.y + 0.625);
+        let sample_point4 = Vec2::new(point.x + 0.625, point.y + 0.875);
 
         let sample_point1_in = self.test_p(sample_point1.x, sample_point1.y);
         let sample_point2_in = self.test_p(sample_point2.x, sample_point2.y);
@@ -313,31 +313,35 @@ impl TriangleInScreen {
 
 fn draw_a_triangle_in_model(triangle: &TriangleInModel, camera: &Camera, image: &mut Vec<f32>) {
     let transform = camera.transform();
-    let p1 = transform * Vector4::new(triangle.p1.x, triangle.p1.y, triangle.p1.z, 1.0);
-    let p2 = transform * Vector4::new(triangle.p2.x, triangle.p2.y, triangle.p2.z, 1.0);
-    let p3 = transform * Vector4::new(triangle.p3.x, triangle.p3.y, triangle.p3.z, 1.0);
+    let p1_4d = Vec4::new(triangle.p1.x, triangle.p1.y, triangle.p1.z, 1.0);
+    let p2_4d = Vec4::new(triangle.p2.x, triangle.p2.y, triangle.p2.z, 1.0);
+    let p3_4d = Vec4::new(triangle.p3.x, triangle.p3.y, triangle.p3.z, 1.0);
+    
+    let p1_transformed = transform * p1_4d;
+    let p2_transformed = transform * p2_4d;
+    let p3_transformed = transform * p3_4d;
 
-    let p1 = Vector3::new(p1.x / p1.w, p1.y / p1.w, p1.z / p1.w);
-    let p2 = Vector3::new(p2.x / p2.w, p2.y / p2.w, p2.z / p2.w);
-    let p3 = Vector3::new(p3.x / p3.w, p3.y / p3.w, p3.z / p3.w);
+    let p1 = Vec3::new(p1_transformed.x / p1_transformed.w, p1_transformed.y / p1_transformed.w, p1_transformed.z / p1_transformed.w);
+    let p2 = Vec3::new(p2_transformed.x / p2_transformed.w, p2_transformed.y / p2_transformed.w, p2_transformed.z / p2_transformed.w);
+    let p3 = Vec3::new(p3_transformed.x / p3_transformed.w, p3_transformed.y / p3_transformed.w, p3_transformed.z / p3_transformed.w);
 
-    let p1 = Vector3 { x: (p1.x + 1.0) * 0.5 * WIDTH as f32, y: (1.0 - p1.y) * 0.5 * HEIGHT as f32, z: p1.z };
-    let p2 = Vector3 { x: (p2.x + 1.0) * 0.5 * WIDTH as f32, y: (1.0 - p2.y) * 0.5 * HEIGHT as f32, z: p2.z };
-    let p3 = Vector3 { x: (p3.x + 1.0) * 0.5 * WIDTH as f32, y: (1.0 - p3.y) * 0.5 * HEIGHT as f32, z: p3.z };
+    let p1_screen = Vec3::new((p1.x + 1.0) * 0.5 * WIDTH as f32, (1.0 - p1.y) * 0.5 * HEIGHT as f32, p1.z);
+    let p2_screen = Vec3::new((p2.x + 1.0) * 0.5 * WIDTH as f32, (1.0 - p2.y) * 0.5 * HEIGHT as f32, p2.z);
+    let p3_screen = Vec3::new((p3.x + 1.0) * 0.5 * WIDTH as f32, (1.0 - p3.y) * 0.5 * HEIGHT as f32, p3.z);
 
-    draw_a_triangle(TriangleInScreen { p1, p2, p3 }, image);
+    draw_a_triangle(TriangleInScreen { p1: p1_screen, p2: p2_screen, p3: p3_screen }, image);
 }
 
 fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Vec<f32>) {
     let bounding_box = triangle.bounding_box();
-    let start_x = max(min(bounding_box.origin.x.floor() as i32, WIDTH as i32), 0);
+    let start_x = max(min(bounding_box.origin.x.floor() as i32, WIDTH as i32 - 1), 0);
     let start_y = max(min(bounding_box.origin.y.floor() as i32, HEIGHT as i32 - 1), 0);
-    let end_x = max(min((bounding_box.origin.x + bounding_box.width).ceil() as i32, WIDTH as i32), 0);
+    let end_x = max(min((bounding_box.origin.x + bounding_box.width).ceil() as i32, WIDTH as i32 - 1), 0);
     let end_y = max(min((bounding_box.origin.y + bounding_box.height).ceil() as i32, HEIGHT as i32 - 1), 0);
 
     for x in start_x ..= end_x {
         for y in start_y ..= end_y {
-            let point = Vector2 { x: x as f32, y: y as f32 };
+            let point = Vec2::new(x as f32, y as f32);
             let coverage = triangle.coverage(point);
             let xy = x as usize + y as usize * WIDTH;
             image[xy] += coverage;
@@ -347,13 +351,13 @@ fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Vec<f32>) {
 
 #[cfg(test)]
 mod test {
-    use cgmath::{Vector2, Vector3};
+    use glam::{Vec2, Vec3};
 
     #[test]
     fn test_coverage() {
-        let triangle = super::TriangleInScreen { p1: Vector3::new(0.0, 0.0, 1.0), p2: Vector3::new(0.0, 2.0, 1.0), p3: Vector3::new(2.0, 0.0, 1.0) };
+        let triangle = super::TriangleInScreen { p1: Vec3::new(0.0, 0.0, 1.0), p2: Vec3::new(0.0, 2.0, 1.0), p3: Vec3::new(2.0, 0.0, 1.0) };
 
-        let point = Vector2::new(0.0, 0.0);
+        let point = Vec2::new(0.0, 0.0);
         let coverage = triangle.coverage(point);
         assert_eq!(coverage, 1.0);
     }

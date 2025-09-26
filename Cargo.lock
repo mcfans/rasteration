@@ -3,15 +3,6 @@
 version = 4
 
 [[package]]
-name = "approx"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f2a05fd1bd10b2527e20a2cd32d8873d115b8b39fe219ee25f42a8aca6ba278"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -49,16 +40,6 @@ name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
-
-[[package]]
-name = "cgmath"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a98d30140e3296250832bbaaff83b27dcd6fa3cc70fb6f1f3e5c9c0023b5317"
-dependencies = [
- "approx",
- "num-traits",
-]
 
 [[package]]
 name = "console_error_panic_hook"
@@ -203,6 +184,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.30.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e12d847aeb25f41be4c0ec9587d624e9cd631bc007a8fd7ce3f5851e064c6460"
+
+[[package]]
 name = "instant"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -332,15 +319,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "num-traits"
-version = "0.2.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
 name = "once_cell"
 version = "1.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -404,7 +382,7 @@ checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 name = "rasteration"
 version = "0.1.0"
 dependencies = [
- "cgmath",
+ "glam",
  "minifb",
 ]
 
