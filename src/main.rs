@@ -1,6 +1,6 @@
-use std::cmp::min;
+use std::cmp::{max, min};
 
-use cgmath::{Matrix, Matrix3, Matrix4, Rad, Vector2, Vector3, Vector4, InnerSpace};
+use cgmath::{InnerSpace, Matrix, Matrix3, Matrix4, Rad, Vector2, Vector3, Vector4, Zero};
 use minifb::{Key, Window, WindowOptions};
 
 struct Model {
@@ -109,7 +109,7 @@ const WIDTH: usize = 512;
 const HEIGHT: usize = 512;
 
 fn main() {
-    let (vertices, faces) = parser_file("/Users/yangxuesi/Downloads/bunny/reconstruction/bun_zipper.ply");
+    let (vertices, faces) = parser_file("/Users/mcfans/Downloads/bunny/reconstruction/bun_zipper.ply");
 
     let triangles: Vec<TriangleInModel> = faces.iter().map(|face| {
         let p1 = vertices[face.x];
@@ -139,18 +139,21 @@ fn main() {
     });
     
     // 初始化相机
-    let camera = Camera {
-        translate: Vector3::new(0.0, 0.0, -50.0),
+    let mut camera = Camera {
+        translate: Vector3::new(0.0, -10.0, -30.0),
         rotate: Matrix3::from_angle_x(Rad(0.0)),
         fov: 60.0f32.to_radians(),
         aspect: 1.0,
         near: 0.1,
-        far: 100.0
+        far: 100.0,
+        transform: Matrix4::zero()
     };
+
+    camera.transform = camera.perspective_transform() * camera.view_transform();
 
     let mut rotation = 0.0f32;
 
-    window.set_target_fps(144);
+    window.set_target_fps(60);
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         image_buffer.fill(0);
@@ -160,7 +163,7 @@ fn main() {
         // 方式1: 只绕Y轴旋转（推荐）
         model.rotate = Matrix3::from_angle_y(Rad(rotation));
         
-        // rotation += 0.001;  // 减慢旋转速度
+        rotation += 0.1;  // 减慢旋转速度
         // 上下反转：绕X轴旋转180度
         model.rotate = Matrix3::from_angle_x(Rad(std::f32::consts::PI)) * model.rotate;
 
@@ -210,7 +213,8 @@ struct Camera {
     fov: f32,
     aspect: f32,
     near: f32,
-    far: f32
+    far: f32,
+    transform: Transform
 }
 
 impl Camera {
@@ -237,10 +241,11 @@ impl Camera {
         )
     }
 
-    fn transform(&self) -> Transform {
+    fn transform(&self) -> &Transform {
+        &self.transform
         // self.view_transform()
         // self.perspective_transform()
-        self.perspective_transform() * self.view_transform()
+        // self.perspective_transform() * self.view_transform()
     }
 }
 
@@ -307,22 +312,6 @@ impl TriangleInScreen {
 }
 
 fn draw_a_triangle_in_model(triangle: &TriangleInModel, camera: &Camera, image: &mut Vec<f32>) {
-    // 背部剔除：计算三角形法向量和视线向量
-    let edge1 = triangle.p2 - triangle.p1;
-    let edge2 = triangle.p3 - triangle.p1;
-    let normal = edge1.cross(edge2).normalize();
-    
-    // 计算三角形中心点
-    let center = (triangle.p1 + triangle.p2 + triangle.p3) / 3.0;
-    
-    // 计算从相机到三角形中心的视线向量
-    let view_direction = (center - camera.translate).normalize();
-    
-    // 如果法向量和视线向量的点积为负，说明三角形背对相机，应该被剔除
-    if normal.dot(view_direction) < 0.0 {
-        return;
-    }
-
     let transform = camera.transform();
     let p1 = transform * Vector4::new(triangle.p1.x, triangle.p1.y, triangle.p1.z, 1.0);
     let p2 = transform * Vector4::new(triangle.p2.x, triangle.p2.y, triangle.p2.z, 1.0);
@@ -341,25 +330,17 @@ fn draw_a_triangle_in_model(triangle: &TriangleInModel, camera: &Camera, image: 
 
 fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Vec<f32>) {
     let bounding_box = triangle.bounding_box();
-    let start_x = bounding_box.origin.x.round() as i32;
-    let start_y = bounding_box.origin.y.round() as i32;
-    let end_x = min((bounding_box.origin.x + bounding_box.width).round() as i32, WIDTH as i32);
-    let end_y = min((bounding_box.origin.y + bounding_box.height).round() as i32, HEIGHT as i32);
+    let start_x = max(min(bounding_box.origin.x.floor() as i32, WIDTH as i32), 0);
+    let start_y = max(min(bounding_box.origin.y.floor() as i32, HEIGHT as i32 - 1), 0);
+    let end_x = max(min((bounding_box.origin.x + bounding_box.width).ceil() as i32, WIDTH as i32), 0);
+    let end_y = max(min((bounding_box.origin.y + bounding_box.height).ceil() as i32, HEIGHT as i32 - 1), 0);
 
     for x in start_x ..= end_x {
         for y in start_y ..= end_y {
             let point = Vector2 { x: x as f32, y: y as f32 };
             let coverage = triangle.coverage(point);
             let xy = x as usize + y as usize * WIDTH;
-            // if coverage >= 0.0 {
-            //     image[xy] = 1.0;
-            // } else {
-            //     image[xy] = 0.0;
-            // }
             image[xy] += coverage;
-            if image[xy] >= 0.75 {
-                image[xy] = 1.0;
-            }
         }
     }
 }
