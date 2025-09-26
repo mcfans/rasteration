@@ -157,6 +157,7 @@ fn main() {
     window.set_target_fps(60);
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        let start_time = std::time::Instant::now();
         image_buffer.fill(0);
         coverage_buffer.fill(0.0);
 
@@ -179,10 +180,14 @@ fn main() {
         // let size = 200.0;
         // draw_a_triangle(TriangleInScreen { p1: Vector3::new(0.0, 0.0, 1.0), p2: Vector3::new(0.0, size, 1.0), p3: Vector3::new(size, 0.0, 1.0) }, &mut coverage_buffer);
 
+        println!("Coverage only {:?}", start_time.elapsed());
         for (i, coverage) in coverage_buffer.iter().enumerate() {
             // image_buffer[i] = u32::from_be_bytes([(255f32 * coverage.min(1.0)) as u8, 0, 0, 255]);
             image_buffer[i] = u32::from_be_bytes([0, 255, (255f32 * coverage.min(1.0)) as u8, 255]);
         }
+
+        let end_time = std::time::Instant::now();
+        println!("Time taken: {:?} triangles {}", end_time.duration_since(start_time), model.triangles.len());
 
         window
             .update_with_buffer(&image_buffer, WIDTH, HEIGHT)
@@ -294,20 +299,22 @@ impl TriangleInScreen {
     }
 
     fn coverage(&self, point: Vec2) -> f32 {
+        let sample_point = Vec2::new(point.x + 0.5, point.y + 0.5);
+        return self.test_p(sample_point.x, sample_point.y) as u8 as f32;
         // 使用标准的MSAA 4x采样模式
         // 采样点均匀分布在像素区域内，避免边缘重叠
-        let sample_point1 = Vec2::new(point.x + 0.375, point.y + 0.125);
-        let sample_point2 = Vec2::new(point.x + 0.875, point.y + 0.375);
-        let sample_point3 = Vec2::new(point.x + 0.125, point.y + 0.625);
-        let sample_point4 = Vec2::new(point.x + 0.625, point.y + 0.875);
+        // let sample_point1 = Vec2::new(point.x + 0.375, point.y + 0.125);
+        // let sample_point2 = Vec2::new(point.x + 0.875, point.y + 0.375);
+        // let sample_point3 = Vec2::new(point.x + 0.125, point.y + 0.625);
+        // let sample_point4 = Vec2::new(point.x + 0.625, point.y + 0.875);
 
-        let sample_point1_in = self.test_p(sample_point1.x, sample_point1.y);
-        let sample_point2_in = self.test_p(sample_point2.x, sample_point2.y);
-        let sample_point3_in = self.test_p(sample_point3.x, sample_point3.y);
-        let sample_point4_in = self.test_p(sample_point4.x, sample_point4.y);
+        // let sample_point1_in = self.test_p(sample_point1.x, sample_point1.y);
+        // let sample_point2_in = self.test_p(sample_point2.x, sample_point2.y);
+        // let sample_point3_in = self.test_p(sample_point3.x, sample_point3.y);
+        // let sample_point4_in = self.test_p(sample_point4.x, sample_point4.y);
 
-        let rate = (sample_point1_in as u8 as f32 + sample_point2_in as u8 as f32 + sample_point3_in as u8 as f32 + sample_point4_in as u8 as f32) / 4.0;
-        rate
+        // let rate = (sample_point1_in as u8 as f32 + sample_point2_in as u8 as f32 + sample_point3_in as u8 as f32 + sample_point4_in as u8 as f32) / 4.0;
+        // rate
     }
 }
 
