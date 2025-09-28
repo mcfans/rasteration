@@ -37,8 +37,8 @@ impl Model {
     }
 }
 
-fn parser_file(file_path: &str) -> (Vec<Vec3>, Vec<USizeVec3>) {
-    let file = std::fs::read_to_string(file_path).unwrap();
+fn parser_file(content: &str) -> (Vec<Vec3>, Vec<USizeVec3>) {
+    let file = content;
 
     let mut vertices = Vec::new();
     let mut triangles = Vec::new();
@@ -110,7 +110,8 @@ const WIDTH: usize = 512;
 const HEIGHT: usize = 512;
 
 fn main() {
-    let (vertices, faces) = parser_file("/Users/mcfans/Downloads/bunny/reconstruction/bun_zipper.ply");
+    let s = include_str!("bun_zipper.ply");
+    let (vertices, faces) = parser_file(s);
 
     let triangles: Vec<TriangleInModel> = faces.iter().map(|face| {
         let p1 = vertices[face.x];
