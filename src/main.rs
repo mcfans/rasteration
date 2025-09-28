@@ -1,4 +1,4 @@
-use std::cmp::{max, min};
+use std::{cmp::{max, min}, mem::swap};
 
 // use cgmath::{InnerSpace, Matrix, Matrix3, Matrix4, Rad, Vector2, Vector3, Vector4, Zero};
 use minifb::{Key, Window, WindowOptions};
@@ -110,7 +110,7 @@ const WIDTH: usize = 512;
 const HEIGHT: usize = 512;
 
 fn main() {
-    let (vertices, faces) = parser_file("/Users/mcfans/Downloads/bunny/reconstruction/bun_zipper.ply");
+    let (vertices, faces) = parser_file("/Users/yangxuesi/Downloads/bunny/reconstruction/bun_zipper.ply");
 
     let triangles: Vec<TriangleInModel> = faces.iter().map(|face| {
         let p1 = vertices[face.x];
@@ -156,6 +156,8 @@ fn main() {
 
     window.set_target_fps(60);
 
+    let mut count = 0;
+
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let start_time = std::time::Instant::now();
         image_buffer.fill(0);
@@ -173,21 +175,22 @@ fn main() {
 
         // 渲染所有三角形
         for triangle in model.transform_triangles_iter() {
-            draw_a_triangle_in_model(&triangle, &camera, &mut coverage_buffer);
+            draw_a_triangle_in_model(&triangle, &camera, &mut coverage_buffer, WIDTH, HEIGHT);
         }
 
         // draw_a_triangle(TriangleInScreen { p1: Vector2::new(0.0, 0.0), p2: Vector2::new(WIDTH as f32 / 2.0, HEIGHT as f32), p3: Vector2::new(WIDTH as f32, 0.0) }, &mut coverage_buffer);
         // let size = 200.0;
         // draw_a_triangle(TriangleInScreen { p1: Vector3::new(0.0, 0.0, 1.0), p2: Vector3::new(0.0, size, 1.0), p3: Vector3::new(size, 0.0, 1.0) }, &mut coverage_buffer);
 
-        println!("Coverage only {:?}", start_time.elapsed());
         for (i, coverage) in coverage_buffer.iter().enumerate() {
             // image_buffer[i] = u32::from_be_bytes([(255f32 * coverage.min(1.0)) as u8, 0, 0, 255]);
             image_buffer[i] = u32::from_be_bytes([0, 255, (255f32 * coverage.min(1.0)) as u8, 255]);
         }
 
         let end_time = std::time::Instant::now();
-        println!("Time taken: {:?} triangles {}", end_time.duration_since(start_time), model.triangles.len());
+        println!("Frame {} Time taken: {:?} triangles {}", count, end_time.duration_since(start_time), model.triangles.len());
+
+        count += 1;
 
         window
             .update_with_buffer(&image_buffer, WIDTH, HEIGHT)
@@ -318,7 +321,7 @@ impl TriangleInScreen {
     }
 }
 
-fn draw_a_triangle_in_model(triangle: &TriangleInModel, camera: &Camera, image: &mut Vec<f32>) {
+fn draw_a_triangle_in_model(triangle: &TriangleInModel, camera: &Camera, image: &mut Vec<f32>, width: usize, height: usize) {
     let transform = camera.transform();
     let p1_4d = Vec4::new(triangle.p1.x, triangle.p1.y, triangle.p1.z, 1.0);
     let p2_4d = Vec4::new(triangle.p2.x, triangle.p2.y, triangle.p2.z, 1.0);
@@ -332,32 +335,82 @@ fn draw_a_triangle_in_model(triangle: &TriangleInModel, camera: &Camera, image: 
     let p2 = Vec3::new(p2_transformed.x / p2_transformed.w, p2_transformed.y / p2_transformed.w, p2_transformed.z / p2_transformed.w);
     let p3 = Vec3::new(p3_transformed.x / p3_transformed.w, p3_transformed.y / p3_transformed.w, p3_transformed.z / p3_transformed.w);
 
-    let p1_screen = Vec3::new((p1.x + 1.0) * 0.5 * WIDTH as f32, (1.0 - p1.y) * 0.5 * HEIGHT as f32, p1.z);
-    let p2_screen = Vec3::new((p2.x + 1.0) * 0.5 * WIDTH as f32, (1.0 - p2.y) * 0.5 * HEIGHT as f32, p2.z);
-    let p3_screen = Vec3::new((p3.x + 1.0) * 0.5 * WIDTH as f32, (1.0 - p3.y) * 0.5 * HEIGHT as f32, p3.z);
+    let p1_screen = Vec3::new((p1.x + 1.0) * 0.5 * width as f32, (1.0 - p1.y) * 0.5 * height as f32, p1.z);
+    let p2_screen = Vec3::new((p2.x + 1.0) * 0.5 * width as f32, (1.0 - p2.y) * 0.5 * height as f32, p2.z);
+    let p3_screen = Vec3::new((p3.x + 1.0) * 0.5 * width as f32, (1.0 - p3.y) * 0.5 * height as f32, p3.z);
 
-    draw_a_triangle(TriangleInScreen { p1: p1_screen, p2: p2_screen, p3: p3_screen }, image);
+    // draw_a_triangle(TriangleInScreen { p1: p1_screen, p2: p2_screen, p3: p3_screen }, image, width, height);
+    std::hint::black_box(p1_screen);
+    std::hint::black_box(p2_screen);
+    std::hint::black_box(p3_screen);
 }
 
-fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Vec<f32>) {
-    let bounding_box = triangle.bounding_box();
-    let start_x = max(min(bounding_box.origin.x.floor() as i32, WIDTH as i32 - 1), 0);
-    let start_y = max(min(bounding_box.origin.y.floor() as i32, HEIGHT as i32 - 1), 0);
-    let end_x = max(min((bounding_box.origin.x + bounding_box.width).ceil() as i32, WIDTH as i32 - 1), 0);
-    let end_y = max(min((bounding_box.origin.y + bounding_box.height).ceil() as i32, HEIGHT as i32 - 1), 0);
+fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Vec<f32>, width: usize, height: usize) {
+    let mut top_point = triangle.p1;
+    let mut middle_point = triangle.p2;
+    let mut bottom_point = triangle.p3;
 
-    for x in start_x ..= end_x {
-        for y in start_y ..= end_y {
-            let point = Vec2::new(x as f32, y as f32);
-            let coverage = triangle.coverage(point);
-            let xy = x as usize + y as usize * WIDTH;
-            image[xy] += coverage;
+    if top_point.y > middle_point.y {
+        swap(&mut top_point, &mut middle_point);
+    }
+    if top_point.y > bottom_point.y {
+        swap(&mut top_point, &mut bottom_point);
+    }
+    if middle_point.y > bottom_point.y {
+        swap(&mut middle_point, &mut bottom_point);
+    }
+
+    let top_y = min(max(top_point.y.floor() as i32, 0), height as i32 - 1);
+    let middle_y = min(max(middle_point.y.floor() as i32, 0), height as i32 - 1);
+    let bottom_y = min(max(bottom_point.y.floor() as i32, 0), height as i32 - 1);
+
+    let slope1 = (top_point.x - middle_point.x) / (top_point.y - middle_point.y);
+    let slope2 = (top_point.x - bottom_point.x) / (top_point.y - bottom_point.y);
+    let slope3 = (middle_point.x - bottom_point.x) / (middle_point.y - bottom_point.y);
+
+    if top_y != middle_y {
+        for y in top_y ..= middle_y {
+            let mut x1: f32 = top_point.x + slope1 * (y as f32 - top_point.y);
+            let mut x2: f32 = top_point.x + slope2 * (y as f32 - top_point.y);
+
+            if x1 > x2 {
+                swap(&mut x1, &mut x2);
+            }
+
+            let lower_bounds = x1.ceil() as usize;
+            let upper_bounds = x2.floor() as usize;
+
+            for x in lower_bounds ..= upper_bounds {
+                let xy = x as usize + y as usize * width;
+                image[xy] += 1.0;
+            }
+        }
+    }
+
+    if middle_y != bottom_y {
+        for y in middle_y ..= bottom_y {
+            let mut x1: f32 = middle_point.x + slope3 * (y as f32 - middle_point.y);
+            let mut x2: f32 = bottom_point.x + slope2 * (y as f32 - bottom_point.y);
+
+            if x1 > x2 {
+                swap(&mut x1, &mut x2);
+            }
+
+            let lower_bounds = x1.ceil() as usize;
+            let upper_bounds = x2.floor() as usize;
+
+            for x in lower_bounds ..= upper_bounds {
+                let xy = x as usize + y as usize * width;
+                image[xy] += 1.0;
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::mem::swap;
+
     use glam::{Vec2, Vec3};
 
     #[test]
@@ -368,4 +421,48 @@ mod test {
         let coverage = triangle.coverage(point);
         assert_eq!(coverage, 1.0);
     }
+
+    #[test]
+    fn test_sort() {
+        let mut v_1 = 3;
+        let mut v_2 = 1;
+        let mut v_3 = 2;
+
+        if v_1 > v_2 {
+            swap(&mut v_1, &mut v_2);
+        }
+        if v_1 > v_3 {
+            swap(&mut v_1, &mut v_3);
+        }
+        if v_2 > v_3 {
+            swap(&mut v_2, &mut v_3);
+        }
+
+        assert_eq!(v_1, 1);
+        assert_eq!(v_2, 2);
+        assert_eq!(v_3, 3);
+    }
+
+    #[test]
+    fn test_draw_a_triangle() {
+        let mut image = vec![0.0; 2 * 2];
+        let triangle = super::TriangleInScreen { p1: Vec3::new(0.0, 0.0, 1.0), p2: Vec3::new(0.0, 1.0, 1.0), p3: Vec3::new(1.0, 0.0, 1.0) };
+        super::draw_a_triangle(triangle, &mut image, 2, 2);
+        assert_ne!(image[0], 0.0);
+        assert_ne!(image[1], 0.0);
+        assert_ne!(image[2], 0.0);
+        assert_eq!(image[3], 0.0);
+    }
+
+    #[test]
+    fn test_draw_a_triangle_2() {
+        let mut image = vec![0.0; 2 * 2];
+        let triangle = super::TriangleInScreen { p1: Vec3::new(1.0, 0.0, 1.0), p2: Vec3::new(0.0, 1.0, 1.0), p3: Vec3::new(1.5, 1.5, 1.0) };
+        super::draw_a_triangle(triangle, &mut image, 2, 2);
+        assert_ne!(image[0], 0.0);
+        assert_ne!(image[1], 0.0);
+        assert_ne!(image[2], 0.0);
+        assert_ne!(image[3], 0.0);
+    }
+
 }
