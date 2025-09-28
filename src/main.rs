@@ -110,7 +110,7 @@ const WIDTH: usize = 512;
 const HEIGHT: usize = 512;
 
 fn main() {
-    let (vertices, faces) = parser_file("/Users/yangxuesi/Downloads/bunny/reconstruction/bun_zipper.ply");
+    let (vertices, faces) = parser_file("/Users/mcfans/Downloads/bunny/reconstruction/bun_zipper.ply");
 
     let triangles: Vec<TriangleInModel> = faces.iter().map(|face| {
         let p1 = vertices[face.x];
@@ -152,7 +152,7 @@ fn main() {
 
     camera.transform = camera.perspective_transform() * camera.view_transform();
 
-    let mut rotation = 0.0f32;
+    let mut rotation = 2.0f32;
 
     window.set_target_fps(60);
 
@@ -163,13 +163,8 @@ fn main() {
         image_buffer.fill(0);
         coverage_buffer.fill(0.0);
 
-        // 尝试不同的旋转方式
-        // 方式1: 只绕Y轴旋转（推荐）
-        model.rotate = Mat3::from_rotation_y(rotation);
-        
         rotation += 0.1;  // 减慢旋转速度
-        // 上下反转：绕X轴旋转180度
-        model.rotate = Mat3::from_rotation_x(std::f32::consts::PI) * model.rotate;
+        model.rotate = Mat3::from_rotation_x(std::f32::consts::PI) * Mat3::from_rotation_y(rotation);
 
         // 更新旋转角度
 
@@ -182,13 +177,13 @@ fn main() {
         // let size = 200.0;
         // draw_a_triangle(TriangleInScreen { p1: Vector3::new(0.0, 0.0, 1.0), p2: Vector3::new(0.0, size, 1.0), p3: Vector3::new(size, 0.0, 1.0) }, &mut coverage_buffer);
 
-        for (i, coverage) in coverage_buffer.iter().enumerate() {
-            // image_buffer[i] = u32::from_be_bytes([(255f32 * coverage.min(1.0)) as u8, 0, 0, 255]);
-            image_buffer[i] = u32::from_be_bytes([0, 255, (255f32 * coverage.min(1.0)) as u8, 255]);
-        }
+        // for (i, coverage) in coverage_buffer.iter().enumerate() {
+        //     // image_buffer[i] = u32::from_be_bytes([(255f32 * coverage.min(1.0)) as u8, 0, 0, 255]);
+        //     image_buffer[i] = u32::from_be_bytes([0, 255, (255f32 * coverage.min(1.0)) as u8, 255]);
+        // }
 
         let end_time = std::time::Instant::now();
-        println!("Frame {} Time taken: {:?} triangles {}", count, end_time.duration_since(start_time), model.triangles.len());
+        println!("Frame {} Time taken: {:?} rotation: {} triangles {}", count, end_time.duration_since(start_time), rotation, model.triangles.len());
 
         count += 1;
 
@@ -339,10 +334,10 @@ fn draw_a_triangle_in_model(triangle: &TriangleInModel, camera: &Camera, image: 
     let p2_screen = Vec3::new((p2.x + 1.0) * 0.5 * width as f32, (1.0 - p2.y) * 0.5 * height as f32, p2.z);
     let p3_screen = Vec3::new((p3.x + 1.0) * 0.5 * width as f32, (1.0 - p3.y) * 0.5 * height as f32, p3.z);
 
-    // draw_a_triangle(TriangleInScreen { p1: p1_screen, p2: p2_screen, p3: p3_screen }, image, width, height);
     std::hint::black_box(p1_screen);
     std::hint::black_box(p2_screen);
     std::hint::black_box(p3_screen);
+    // draw_a_triangle(TriangleInScreen { p1: p1_screen, p2: p2_screen, p3: p3_screen }, image, width, height);
 }
 
 fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Vec<f32>, width: usize, height: usize) {
