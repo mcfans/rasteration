@@ -7,3 +7,7 @@ edition = "2021"
 glam = "0.30.8"
 minifb = "0.28"
 
+[profile.release-with-debug]
+inherits = "release"
+debug = true
+lto = true

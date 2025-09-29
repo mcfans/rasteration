@@ -159,7 +159,7 @@ fn main() {
 
     let mut count = 0;
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
+    for _ in 0..200 {
         let start_time = std::time::Instant::now();
         image_buffer.fill(0);
         coverage_buffer.fill(0.0);
@@ -170,8 +170,9 @@ fn main() {
         // 更新旋转角度
 
         // 渲染所有三角形
-        for triangle in model.transform_triangles_iter() {
-            draw_a_triangle_in_model(&triangle, &camera, &mut coverage_buffer, WIDTH, HEIGHT);
+        for triangle in &model.triangles {
+            let transformed_triangle = model.transform_triangle(triangle);
+            draw_a_triangle_in_model(&transformed_triangle, &camera, &mut coverage_buffer, WIDTH, HEIGHT);
         }
 
         // draw_a_triangle(TriangleInScreen { p1: Vector2::new(0.0, 0.0), p2: Vector2::new(WIDTH as f32 / 2.0, HEIGHT as f32), p3: Vector2::new(WIDTH as f32, 0.0) }, &mut coverage_buffer);
@@ -187,13 +188,15 @@ fn main() {
         println!("Frame {} Time taken: {:?} rotation: {} triangles {}", count, end_time.duration_since(start_time), rotation, model.triangles.len());
 
         count += 1;
-
-        window
-            .update_with_buffer(&image_buffer, WIDTH, HEIGHT)
-            .unwrap_or_else(|e| {
-                panic!("{}", e);
-            });
     }
+
+    // while window.is_open() && !window.is_key_down(Key::Escape) {
+    //     window
+    //         .update_with_buffer(&image_buffer, WIDTH, HEIGHT)
+    //         .unwrap_or_else(|e| {
+    //             panic!("{}", e);
+    //         });
+    // }
 }
 type Point = Vec3;
 
@@ -335,26 +338,82 @@ fn draw_a_triangle_in_model(triangle: &TriangleInModel, camera: &Camera, image: 
     let p2_screen = Vec3::new((p2.x + 1.0) * 0.5 * width as f32, (1.0 - p2.y) * 0.5 * height as f32, p2.z);
     let p3_screen = Vec3::new((p3.x + 1.0) * 0.5 * width as f32, (1.0 - p3.y) * 0.5 * height as f32, p3.z);
 
-    std::hint::black_box(p1_screen);
-    std::hint::black_box(p2_screen);
-    std::hint::black_box(p3_screen);
-    // draw_a_triangle(TriangleInScreen { p1: p1_screen, p2: p2_screen, p3: p3_screen }, image, width, height);
+    draw_a_triangle(TriangleInScreen { p1: p1_screen, p2: p2_screen, p3: p3_screen }, image, width, height);
 }
 
-fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Vec<f32>, width: usize, height: usize) {
-    let mut top_point = triangle.p1;
-    let mut middle_point = triangle.p2;
-    let mut bottom_point = triangle.p3;
+const TABLE: [[usize; 3]; 8] = [
+    [2, 1, 0], // 000
+    [0, 0, 0], // 001 不可能
+    [1, 2, 0], // 010
+    [1, 0, 2], // 011
+    [2, 0, 1], // 100
+    [0, 2, 1], // 101
+    [0, 0, 0], // 110
+    [0, 1, 2], // 111 
+];
 
-    if top_point.y > middle_point.y {
-        swap(&mut top_point, &mut middle_point);
+// a<b<c 111
+// a<c<b 101
+// b<a<c 011
+// b<c<a 010
+// c<a<b 100
+// c<b<a 000
+
+#[inline(always)]
+fn min_with_index(a: f32, b: f32, c: f32) -> [usize; 3] {
+    TABLE[((a < b) as u8 as usize) << 2 | ((b < c) as u8 as usize) << 1 | ((a < c) as u8 as usize)]
+}
+
+const FIXED_SIZE: usize = 8;
+const FIXED_SIZE2: i32 = 8;
+
+#[inline(always)]
+fn draw_a_triangle_line(top_point: Vec3, image: &mut Vec<f32>, slope1: f32, slope2: f32, width: usize, y: i32) {
+    let x1: f32 = top_point.x + slope1 * (y as f32 - top_point.y);
+    let x2: f32 = top_point.x + slope2 * (y as f32 - top_point.y);
+
+    let c = x1.min(x2);
+    let d = x1.max(x2);
+    let c_ceil = c.ceil() as usize;
+    let d_floor = d.floor() as usize;
+    let lower_bounds = c_ceil.min(d_floor);
+    let upper_bounds = c_ceil.max(d_floor);
+
+    let n = upper_bounds - lower_bounds;
+    let base = lower_bounds + y as usize * width;
+    image[base + 0] += 1.0;
+
+    for i in 0..FIXED_SIZE {
+        let bigger = i <= n;
+        let xy = base + i * bigger as usize;
+        image[xy] += 1.0 * bigger as u8 as f32;
     }
-    if top_point.y > bottom_point.y {
-        swap(&mut top_point, &mut bottom_point);
+
+    for i in FIXED_SIZE..n {
+        let xy = base + i;
+        image[xy] += 1.0;
     }
-    if middle_point.y > bottom_point.y {
-        swap(&mut middle_point, &mut bottom_point);
+}
+
+#[inline(always)]
+fn draw_a_triangle_part(top_point: Vec3, top_y: i32, middle_y: i32, image: &mut Vec<f32>, slope1: f32, slope2: f32, width: usize) {
+    let y_diff = middle_y - top_y;
+    if y_diff == 0 {
+        return;
     }
+    for i in 0..y_diff {
+        let y = top_y + i;
+        draw_a_triangle_line(top_point, image, slope1, slope2, width, y);
+    }
+}
+
+#[inline(always)]
+fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Vec<f32>, width: usize, height: usize) {
+    let points = [triangle.p1, triangle.p2, triangle.p3];
+    let index = min_with_index(points[0].y, points[1].y, points[2].y);
+    let top_point = points[index[0]];
+    let middle_point = points[index[1]];
+    let bottom_point = points[index[2]];
 
     let top_y = min(max(top_point.y.floor() as i32, 0), height as i32 - 1);
     let middle_y = min(max(middle_point.y.floor() as i32, 0), height as i32 - 1);
@@ -364,43 +423,46 @@ fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Vec<f32>, width: usiz
     let slope2 = (top_point.x - bottom_point.x) / (top_point.y - bottom_point.y);
     let slope3 = (middle_point.x - bottom_point.x) / (middle_point.y - bottom_point.y);
 
-    if top_y != middle_y {
-        for y in top_y ..= middle_y {
-            let mut x1: f32 = top_point.x + slope1 * (y as f32 - top_point.y);
-            let mut x2: f32 = top_point.x + slope2 * (y as f32 - top_point.y);
+    draw_a_triangle_part(top_point, top_y, middle_y, image, slope1, slope2, width);
+    draw_a_triangle_part(middle_point, middle_y, bottom_y, image, slope3, slope2, width);
 
-            if x1 > x2 {
-                swap(&mut x1, &mut x2);
-            }
+    // for y in top_y ..= middle_y {
+    //     let x1: f32 = top_point.x + slope1 * (y as f32 - top_point.y);
+    //     let x2: f32 = top_point.x + slope2 * (y as f32 - top_point.y);
 
-            let lower_bounds = x1.ceil() as usize;
-            let upper_bounds = x2.floor() as usize;
+    //     let c = x1.min(x2);
+    //     let d = x1.max(x2);
 
-            for x in lower_bounds ..= upper_bounds {
-                let xy = x as usize + y as usize * width;
-                image[xy] += 1.0;
-            }
-        }
-    }
+    //     let flag = (top_y != middle_y) as usize;
 
-    if middle_y != bottom_y {
-        for y in middle_y ..= bottom_y {
-            let mut x1: f32 = middle_point.x + slope3 * (y as f32 - middle_point.y);
-            let mut x2: f32 = bottom_point.x + slope2 * (y as f32 - bottom_point.y);
+    //     let lower_bounds = c.ceil() as usize * flag;
+    //     let upper_bounds = d.floor() as usize * flag;
 
-            if x1 > x2 {
-                swap(&mut x1, &mut x2);
-            }
+    //     for x in lower_bounds ..= upper_bounds {
+    //         let xy = x as usize + y as usize * width;
+    //         let index = xy * flag;
+    //         image[index] += 1.0 * flag as f32;
+    //     }
+    // }
 
-            let lower_bounds = x1.ceil() as usize;
-            let upper_bounds = x2.floor() as usize;
+    // for y in middle_y ..= bottom_y {
+    //     let x1: f32 = middle_point.x + slope3 * (y as f32 - middle_point.y);
+    //     let x2: f32 = bottom_point.x + slope2 * (y as f32 - bottom_point.y);
 
-            for x in lower_bounds ..= upper_bounds {
-                let xy = x as usize + y as usize * width;
-                image[xy] += 1.0;
-            }
-        }
-    }
+    //     let c = x1.min(x2);
+    //     let d = x1.max(x2);
+
+    //     let flag = (middle_y != bottom_y) as usize;
+
+    //     let lower_bounds = c.ceil() as usize * flag;
+    //     let upper_bounds = d.floor() as usize * flag;
+
+    //     for x in lower_bounds ..= upper_bounds {
+    //         let xy = x as usize + y as usize * width;
+    //         let index = xy * flag;
+    //         image[index] += 1.0 * flag as f32;
+    //     }
+    // }
 }
 
 #[cfg(test)]
@@ -459,6 +521,31 @@ mod test {
         assert_ne!(image[1], 0.0);
         assert_ne!(image[2], 0.0);
         assert_ne!(image[3], 0.0);
+    }
+
+    fn sorted(a: f32, b: f32, c: f32) -> [f32; 3] {
+        let old = [a, b, c];
+        let index = super::min_with_index(a, b, c);
+        [old[index[0]], old[index[1]], old[index[2]]]
+    }
+
+    #[test]
+    fn test_sorted() {
+        let test_cases = [
+            (1.0f32, 2.0f32, 3.0f32),
+            (1.0f32, 3.0f32, 2.0f32),
+            (2.0f32, 1.0f32, 3.0f32),
+            (2.0f32, 3.0f32, 1.0f32),
+            (3.0f32, 1.0f32, 2.0f32),
+            (3.0f32, 2.0f32, 1.0f32),
+        ];
+        for (a, b, c) in test_cases {
+            let sorted = sorted(a, b, c);
+            let mut old = [a, b, c];
+            old.sort_by(|x, y| x.partial_cmp(y).unwrap());
+            println!("a: {}, b: {}, c: {}, sorted: {:?}, old: {:?}", a, b, c, sorted, old);
+            assert_eq!(sorted, old)
+        }
     }
 
 }
