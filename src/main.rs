@@ -2,7 +2,7 @@ use std::{cmp::{max, min}, mem::swap};
 
 // use cgmath::{InnerSpace, Matrix, Matrix3, Matrix4, Rad, Vector2, Vector3, Vector4, Zero};
 use minifb::{Key, Window, WindowOptions};
-use glam::{Mat3, Mat4, USizeVec3, Vec3, Vec4, Vec2};
+use glam::{ivec4, uvec4, IVec4, Mat3, Mat4, USizeVec3, Vec2, Vec3, Vec4};
 
 struct Model {
     triangles: Vec<TriangleInModel>,
@@ -159,7 +159,7 @@ fn main() {
 
     let mut count = 0;
 
-    for _ in 0..200 {
+    while window.is_open() && !window.is_key_down(Key::Escape) {
         let start_time = std::time::Instant::now();
         image_buffer.fill(0);
         coverage_buffer.fill(0.0);
@@ -175,28 +175,21 @@ fn main() {
             draw_a_triangle_in_model(&transformed_triangle, &camera, &mut coverage_buffer, WIDTH, HEIGHT);
         }
 
-        // draw_a_triangle(TriangleInScreen { p1: Vector2::new(0.0, 0.0), p2: Vector2::new(WIDTH as f32 / 2.0, HEIGHT as f32), p3: Vector2::new(WIDTH as f32, 0.0) }, &mut coverage_buffer);
-        // let size = 200.0;
-        // draw_a_triangle(TriangleInScreen { p1: Vector3::new(0.0, 0.0, 1.0), p2: Vector3::new(0.0, size, 1.0), p3: Vector3::new(size, 0.0, 1.0) }, &mut coverage_buffer);
-
-        // for (i, coverage) in coverage_buffer.iter().enumerate() {
-        //     // image_buffer[i] = u32::from_be_bytes([(255f32 * coverage.min(1.0)) as u8, 0, 0, 255]);
-        //     image_buffer[i] = u32::from_be_bytes([0, 255, (255f32 * coverage.min(1.0)) as u8, 255]);
-        // }
+        for (i, coverage) in coverage_buffer.iter().enumerate() {
+            // image_buffer[i] = u32::from_be_bytes([(255f32 * coverage.min(1.0)) as u8, 0, 0, 255]);
+            image_buffer[i] = u32::from_be_bytes([0, 255, (255f32 * coverage.min(1.0)) as u8, 255]);
+        }
 
         let end_time = std::time::Instant::now();
         println!("Frame {} Time taken: {:?} rotation: {} triangles {}", count, end_time.duration_since(start_time), rotation, model.triangles.len());
 
         count += 1;
+        window
+            .update_with_buffer(&image_buffer, WIDTH, HEIGHT)
+            .unwrap_or_else(|e| {
+                panic!("{}", e);
+            });
     }
-
-    // while window.is_open() && !window.is_key_down(Key::Escape) {
-    //     window
-    //         .update_with_buffer(&image_buffer, WIDTH, HEIGHT)
-    //         .unwrap_or_else(|e| {
-    //             panic!("{}", e);
-    //         });
-    // }
 }
 type Point = Vec3;
 
@@ -365,7 +358,6 @@ fn min_with_index(a: f32, b: f32, c: f32) -> [usize; 3] {
 }
 
 const FIXED_SIZE: usize = 8;
-const FIXED_SIZE2: i32 = 8;
 
 #[inline(always)]
 fn draw_a_triangle_line(top_point: Vec3, image: &mut Vec<f32>, slope1: f32, slope2: f32, width: usize, y: i32) {
@@ -398,9 +390,6 @@ fn draw_a_triangle_line(top_point: Vec3, image: &mut Vec<f32>, slope1: f32, slop
 #[inline(always)]
 fn draw_a_triangle_part(top_point: Vec3, top_y: i32, middle_y: i32, image: &mut Vec<f32>, slope1: f32, slope2: f32, width: usize) {
     let y_diff = middle_y - top_y;
-    if y_diff == 0 {
-        return;
-    }
     for i in 0..y_diff {
         let y = top_y + i;
         draw_a_triangle_line(top_point, image, slope1, slope2, width, y);
@@ -425,44 +414,6 @@ fn draw_a_triangle(triangle: TriangleInScreen, image: &mut Vec<f32>, width: usiz
 
     draw_a_triangle_part(top_point, top_y, middle_y, image, slope1, slope2, width);
     draw_a_triangle_part(middle_point, middle_y, bottom_y, image, slope3, slope2, width);
-
-    // for y in top_y ..= middle_y {
-    //     let x1: f32 = top_point.x + slope1 * (y as f32 - top_point.y);
-    //     let x2: f32 = top_point.x + slope2 * (y as f32 - top_point.y);
-
-    //     let c = x1.min(x2);
-    //     let d = x1.max(x2);
-
-    //     let flag = (top_y != middle_y) as usize;
-
-    //     let lower_bounds = c.ceil() as usize * flag;
-    //     let upper_bounds = d.floor() as usize * flag;
-
-    //     for x in lower_bounds ..= upper_bounds {
-    //         let xy = x as usize + y as usize * width;
-    //         let index = xy * flag;
-    //         image[index] += 1.0 * flag as f32;
-    //     }
-    // }
-
-    // for y in middle_y ..= bottom_y {
-    //     let x1: f32 = middle_point.x + slope3 * (y as f32 - middle_point.y);
-    //     let x2: f32 = bottom_point.x + slope2 * (y as f32 - bottom_point.y);
-
-    //     let c = x1.min(x2);
-    //     let d = x1.max(x2);
-
-    //     let flag = (middle_y != bottom_y) as usize;
-
-    //     let lower_bounds = c.ceil() as usize * flag;
-    //     let upper_bounds = d.floor() as usize * flag;
-
-    //     for x in lower_bounds ..= upper_bounds {
-    //         let xy = x as usize + y as usize * width;
-    //         let index = xy * flag;
-    //         image[index] += 1.0 * flag as f32;
-    //     }
-    // }
 }
 
 #[cfg(test)]
